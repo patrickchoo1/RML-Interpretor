@@ -10,10 +10,7 @@
 
 (** CS 3110 Spring 2023 Assignment A4 RML
 
-    @author Your Name Here (your netid here) *)
-
-(* TODO: complete the academic integrity statement below, then delete
-   this TODO comment. *)
+    @author Patrick Choo (pkc48) *)
 
 (************************************************************
 
