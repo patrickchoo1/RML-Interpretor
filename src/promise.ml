@@ -206,7 +206,7 @@ module Fwt = struct
       we are now waiting on some other child.
   *)
   let rec poll : task_id -> task -> unit =
-   failwith "Unimplemented"
+    fun _ _ -> failwith "Unimplemented"
 
   (** Poll all tasks in the ready queue until it is empty.
 

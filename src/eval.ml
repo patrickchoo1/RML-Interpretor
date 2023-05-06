@@ -5,8 +5,19 @@ exception TypeError of string
 exception InexhaustivePatterns
 exception HandleNotFound of string
 
-(* TODO: add a custom type for values *)
-type value = unit
+type value = 
+  |VInt of int
+  |VUnit of unit
+  |VString of string
+  |VBool of bool
+  |VVar of string
+  |VClosure of pat * expr * env
+  |VHandle
+  |VPair of value * value
+  |VNil
+  |VList of value list
+  |Loc of value ref
+
 and env = (string * value) list
 
 (*****************************************************************************
@@ -31,25 +42,27 @@ type function_option =
 
     Raises if [v] is not a function or a recursive function. Built-in
     functions will also raise. *)
-let assert_function (v : value) : pat * expr * env =
-  failwith "Unimplemented"
+let assert_function (v : value) : pat * expr * env = match v with 
+  |VClosure (pat, expr, env) -> (pat, expr, env)
+  |_ -> raise (TypeError "Not a function")
 
 (** [assert_function_option v] is the function_option with parameter
     pattern, body expression, and either closure environment or closure
     environment ref from [v].
 
     Similar to assert_function, but will not raise. *)
-let assert_function_option (v : value) : function_option =
-  failwith "Unimplemented"
+let assert_function_option (v : value) : function_option = match v with 
+  |VClosure (pat, expr, env) -> Func(pat,expr,env)
+  |_ -> NotAFunction
 
 (** [make_handle h] is the value representing the handle [h]. *)
-let make_handle (h : handle) : value =
-  failwith "Unimplemented"
+let make_handle (h : handle) : value = match h with
+  |handle -> VHandle
 
 (** [make_closure p e env] is the closure representing the pattern [p],
     expression [e], and closure environment [env]. *)
-let make_closure (p : pat) (e : expr) (env : env) : value =
-  failwith "Unimplemented"
+let make_closure (p : pat) (e : expr) (env : env) : value = 
+  VClosure(p, e, env)
 
 (** [make_recursive_closure p e env] is the closure representing the
     pattern [p], expression [e], and closure environment reference
@@ -109,8 +122,20 @@ let rec take_env (n : int) (env : env) : env =
 
 let size_env (env : env) : int = List.length env
 
-let rec string_of_value (v : value) : string =
-  failwith "Unimplemented" 
+let rec string_of_value (v : value) : string = 
+  match v with 
+  |VInt i -> string_of_int i 
+  |VUnit () -> "()"
+  |VString s -> "\"" ^ s ^ "\""
+  |VBool b -> string_of_bool b
+  |VVar v -> v
+  |VClosure (pat, expr, env) -> "<function>"
+  |VHandle -> "<handle>"
+  |VPair (v1, v2) ->  "(" ^ string_of_value v1 ^ ", " ^ string_of_value v2 ^ ")"
+  |VNil -> "<list>"
+  |VList l -> "<list>"
+  |Loc r -> "<ref>"
+
 let string_of_env (env : env) : string =
   env
   |> List.map (fun (x, v) ->
@@ -351,14 +376,105 @@ let self (env : env) : value = find_env env "_SELF"
    interpreter. It is your task to implement these functions. Good luck!
  *****************************************************************************)
 
-let rec bind_pattern (p : pat) (v : value) : env option =
-  failwith "Unimplemented"
+
+let rec bind_pattern (p : pat) (v : value) : env option = match p,v with 
+  |PInt x, VInt y when x = y -> Some []
+  |PString x, VString y when x = y -> Some []
+  |PBool x,  VBool y when x = y -> Some []
+  |PUnit x, VUnit y when x = y -> Some []
+  |PVar name, _ -> Some [(name, v)]
+  |PPair (p1, p2), VPair(v1, v2) -> bind_pair p1 p2 v1 v2
+  |_ -> None
+
+and bind_pair (p1: pat) (p2: pat) (v1: value) (v2: value) : env option = 
+  let Some[(name, v)] = bind_pattern p1 v1 in let Some[(name', v')] = bind_pattern p2 v2 in
+    if name = name' then bind_pattern p2 v2 else let Some env = bind_pattern p1 v1 in let Some env' = bind_pattern p2 v2 in 
+    Some (env @ env') 
 
 let rec eval_expr (env : env) (expr : expr) : value =
-  failwith "Unimplemented"
+  match expr with 
+    |Int i -> VInt i
+    |Unit () -> VUnit ()
+    |String s -> VString s 
+    |Bool b -> VBool b 
+    |Binop (bop, e1, e2) -> eval_bop env bop e1 e2
+    |Var v -> find_env env v
+    |Let (x, e1 ,e2) -> eval_let env x e1 e2
+    |Fun (p, e) -> VClosure(p, e, env)   
+    |App(e1 ,e2) -> eval_app env e1 e2
+    |If(e1, e2, e3) -> eval_if env e1 e2 e3
+    |Pair(e1, e2) -> VPair(eval_expr env e1, eval_expr env e2)
+    |Nil () -> VNil
+    |Seq(e1, e2) ->  
+      let v1 = eval_expr env e1 in
+        let v2 = eval_expr env e2 in if v1 = VUnit () 
+          then v2 else failwith "Precondition Violated" 
+    |Uop(uop, e) -> eval_uop env uop e
+    |Self () -> VHandle 
+     
+and eval_bop env bop e1 e2 = match bop, eval_expr env e1, eval_expr env e2 with 
+  |Add, VInt a, VInt b -> VInt (a+b)
+  |Or, VBool a, VBool b -> VBool (a || b)
+  |And, VBool a, VBool b -> VBool (a && b)
+  |Sub, VInt a, VInt b -> VInt(a - b)
+  |Mul, VInt a, VInt b -> VInt (a + b)
+  |Div, VInt a, VInt b -> VInt(a/b)
+  |Mod, VInt a, VInt b -> VInt(a mod b)
+  |Lt, VInt a ,VInt b -> VBool(a < b)
+  |Le, VInt a ,VInt b -> VBool(a <= b)
+  |Gt, VInt a ,VInt b -> VBool(a > b)
+  |Ge, VInt a ,VInt b -> VBool(a >= b)
+  |Eq, VInt a ,VInt b -> VBool(a = b)
+  |Eq, VString a ,VString b -> VBool(a = b)
+  |Eq, VBool a ,VBool b -> VBool(a = b)
+  |Ne, VInt a ,VInt b -> VBool(a <> b)
+  |Ne, VString a ,VString b -> VBool(a <> b)
+  |Ne, VBool a ,VBool b -> VBool(a <> b)
+  |Cat, VString a, VString b -> VString (a ^ b)
+  |Pipe, VClosure(p, e, env_cl), v2 ->
+    let env' = update_env env_cl (pattern_to_id p) v2 in
+      eval_expr env' e
+  |Assign, Loc l, v -> l := v; VUnit ()
+  |Cons, v1, v2 -> match v2 with 
+    |VNil -> VNil
+    |VList lst -> VList(v1 :: lst)
+    |_ -> failwith "Precon fail"
+  |_ -> failwith "Pre"
 
-let eval_defn (env : env) (defn : defn) : env =
-  failwith "Unimplemented"
 
-let eval_program (env : env) (prog : prog) : env =
-  failwith "Unimplemented"
+
+and eval_uop env uop e = match uop, eval_expr env e with 
+  |Neg, VInt a -> VInt(-a)
+  |Not, VBool true -> VBool false
+  |Not, VBool false -> VBool true
+  |Ref, v -> Loc(ref v)
+  |Deref, Loc v -> !v
+  |_ -> failwith "preconfail"
+
+
+and eval_let env x e1 e2 =  
+  let v1 = eval_expr env e1 in  
+    let env1 = update_env env (pattern_to_id x) v1 in eval_expr env1 e2 
+
+and pattern_to_id (pat: pat) : id = match pat with 
+  |PVar id -> id
+  |_ -> "No bindings"
+
+and eval_app (env:env) (e1:expr) (e2:expr) : value = match eval_expr env e1 with
+  |VClosure(p,e, env_cl) -> let x = eval_expr env e2 in 
+    let env' = update_env env_cl (pattern_to_id p) x in eval_expr env' e 
+  |_ -> failwith "Not App"
+
+and eval_if (env: env) (e1:expr) (e2: expr) (e3:expr) : value = match eval_expr env e1 with 
+  |VBool true -> eval_expr env e2
+  |VBool false -> eval_expr env e3
+  |_ -> failwith ("if_guard_err")
+
+and eval_defn (env : env) (defn : defn) : env = match defn with 
+  |DLet (pat, expr) -> update_env env (pattern_to_id pat) (eval_expr env expr)
+
+
+let rec eval_program (env : env) (prog : prog) : env =  match prog with 
+  |[] -> env
+  |h::t -> let env1 = eval_defn env h in eval_program env1 t
+  

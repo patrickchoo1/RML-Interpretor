@@ -5,9 +5,6 @@
    or use it for commercial purposes.
  ************************************************************)
 
-(* TODO: change the name and NetID below to your own, then delete this
-   TODO comment. *)
-
 (** CS 3110 Spring 2023 Assignment A4 RML
 
     @author Patrick Choo (pkc48) *)
